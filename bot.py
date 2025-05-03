@@ -1,4 +1,5 @@
 import os
+import argparse
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -14,6 +15,8 @@ import requests
 
 from dotenv import load_dotenv
 
+from utils import validate_and_extract_urls
+
 load_dotenv()
 
 from services import (
@@ -27,6 +30,8 @@ from services import (
     db_get_memory,
     db_set_group_limit,
     db_set_user_limit,
+    db_get_memory_by_id,
+    db_update_video_url,
 )
 
 from vidu import reference_to_video, get_generation_status
@@ -36,7 +41,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-
+USE_MOCK_DATA = False
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 API_KEY = os.getenv("VIDO_API_KEY")
 VIDU_API_URL = "https://api.vidu.com/imagine"
@@ -63,7 +68,6 @@ Available commands:
     await update.message.reply_text(commands)
 
 
-
 async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handle the /reference command to set a reference for the group.
@@ -81,9 +85,11 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Usage:
         /reference <value>
     """
+
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("You don't have permission to set a reference.")
         return
+
     if len(context.args) < 1:
         await update.message.reply_text("Usage: /reference <value>")
         return
@@ -93,6 +99,44 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db_add_reference(group_id, ref)
 
     await update.message.reply_text(f"Reference for this group set to:\n{ref}")
+
+
+async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if update.message.document and update.message.document.mime_type == "text/plain":
+        document = update.message.document
+        caption = update.message.caption
+        if caption and caption.strip().lower() == "/reference":
+            file = await context.bot.get_file(document.file_id)
+            folder_path = "references"
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+            file_path = f"{folder_path}/{update.effective_chat.id}_{document.file_name}"
+
+            # Download the file
+            await file.download_to_drive(file_path)
+
+            # Validate and extract URLs
+            urls = validate_and_extract_urls(file_path)
+            if urls is None:
+                await update.message.reply_text(
+                    "The file must contain a valid list of URLs."
+                )
+                return
+
+            # Save the URLs as a reference
+            db_add_reference(update.effective_chat.id, ",".join(urls))
+            await update.message.reply_text(
+                f"Reference set from uploaded file:\n{', '.join(urls)}"
+            )
+        else:
+            await update.message.reply_text(
+                "If you want to upload a reference, please provide a valid caption (i.e., '/reference') with the file."
+            )
+    else:
+        await update.message.reply_text("Please upload a valid .txt file.")
 
 
 async def set_group_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,13 +215,15 @@ async def set_user_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /imagine <prompt>")
+        return
+
     group_id = update.effective_chat.id
     user_id = update.effective_user.id
     group_limit, user_limit = db_get_limits(group_id)
     group_usage, user_usage = db_get_usage(group_id, user_id)
-    if len(context.args) < 1:
-        await update.message.reply_text("Usage: /imagine <prompt>")
-        return
+
     if group_limit is not None and group_usage >= group_limit:
         await update.message.reply_text("Group has reached its monthly limit.")
         return
@@ -192,17 +238,19 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Call the reference_to_video function to start the task
     user_prompt = " ".join(context.args)
-
+    print(f"Ref is: {ref}")
     try:
         response = reference_to_video(
+            mock=USE_MOCK_DATA,
             api_key=API_KEY,
             model=MODEL,
-            images=IMAGES,  # TODO Replace with actual images i.e. REF
+            images=[ref],
             prompt=f"{user_prompt}, {ENDING_PROMPT}",
             duration=DURATION,
             aspect_ratio=ASPECT_RATIO,
             resolution=RESOLUTION,
         )
+        print(f"Response is: {response}")
     except requests.exceptions.HTTPError as e:
         await update.message.reply_text(f"Error: {e}")
         return
@@ -215,11 +263,14 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if status == "created":
+        db_add_memory(user_id=user_id, video_url="", task_id=task_id, status="pending")
         await update.message.reply_text("Generating video...")
 
     # Poll the API for the task status
     for _ in range(MAX_POLLING_TIME // POLL_SLEEP_CYCLE):
-        status_response = get_generation_status(api_key=API_KEY, task_id=task_id)
+        status_response = get_generation_status(
+            mock=USE_MOCK_DATA, api_key=API_KEY, task_id=task_id
+        )
         state = status_response.get("state")
 
         if state == "success":
@@ -228,7 +279,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 video_url = creations[0].get("url")
                 await update.message.reply_video(video=video_url)
                 db_update_usage(group_id, user_id)
-                db_add_memory(user_id, video_url)
+                db_update_video_url(user_id, task_id, video_url)
             else:
                 await update.message.reply_text("No video URL found in the response.")
             return
@@ -239,30 +290,104 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(POLL_SLEEP_CYCLE)
 
     await update.message.reply_text(
-        "Video generation is taking too long. Please try again later."
+        "Video generation is taking too long. Use /memory <id> to check the status."
     )
 
 
-
 async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    group_id = update.effective_chat.id
     user_id = update.effective_user.id
+
+    # Check if an ID is passed as an argument
+    if context.args:
+        try:
+            memory_id = int(context.args[0])  # Parse the ID
+        except ValueError:
+            await update.message.reply_text(
+                "Invalid ID. Please provide a valid numeric ID."
+            )
+            return
+
+        # Fetch specific memory by ID
+        memory = db_get_memory_by_id()
+
+        if not memory:
+            await update.message.reply_text(f"No memory found with ID {memory_id}.")
+            return
+
+        url, ts, task_id, status = memory
+
+        # Poll the API for the task status
+        if status == "pending":
+            await update.message.reply_text("Video is still being generated.")
+            for _ in range(MAX_POLLING_TIME // POLL_SLEEP_CYCLE):
+                status_response = get_generation_status(
+                    mock=USE_MOCK_DATA, api_key=API_KEY, task_id=task_id
+                )
+                state = status_response.get("state")
+
+                if state == "success":
+                    creations = status_response.get("creations", [])
+                    if creations:
+                        video_url = creations[0].get("url")
+                        db_update_usage(group_id, user_id)
+                        db_update_video_url(
+                            user_id, task_id, video_url, status="success"
+                        )
+                        await update.message.reply_video(video=video_url)
+                    else:
+                        await update.message.reply_text(
+                            "No video URL found in the response."
+                        )
+                    return
+                elif state == "failed":
+                    await update.message.reply_text("Video generation failed.")
+                    return
+
+                await asyncio.sleep(POLL_SLEEP_CYCLE)
+            await update.message.reply_text(
+                "Video generation is taking too long. Use /memory <id> to check the status."
+            )
+            return
+        elif status == "success":
+            await update.message.reply_video(video=url)
+            return
+
+        await update.message.reply_text(f"Generated at {ts} UTC:\n{url}")
+        return
+
+    # Fetch the last 5 memories if no ID is provided
     history = db_get_memory(user_id)
     if not history:
         await update.message.reply_text("No past videos found.")
         return
+
     for url, ts in history:
         await update.message.reply_text(f"Generated at {ts} UTC:\n{url}")
 
 
-# --- Bot Init ---
-init_db()
-app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("reference", reference))
-app.add_handler(CommandHandler("sgl", set_group_limit))
-app.add_handler(CommandHandler("sul", set_user_limit))
-app.add_handler(CommandHandler("imagine", imagine))
-app.add_handler(CommandHandler("memory", memory))
-
 if __name__ == "__main__":
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Run the Telegram bot.")
+    parser.add_argument(
+        "--mockdata",
+        action="store_true",
+        help="Use mock data instead of connecting to external APIs.",
+    )
+    args = parser.parse_args()
+
+    # Check if mock data is enabled
+    USE_MOCK_DATA = args.mockdata
+
+    # --- Bot Init ---
+    init_db()
+    app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("reference", reference))
+    app.add_handler(CommandHandler("sgl", set_group_limit))
+    app.add_handler(CommandHandler("sul", set_user_limit))
+    app.add_handler(CommandHandler("imagine", imagine))
+    app.add_handler(CommandHandler("memory", memory))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file_upload))
+
     app.run_polling()

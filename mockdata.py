@@ -1,4 +1,4 @@
-{
+MOCK_TASK_SUCCESS ={
     "state": "success",
     "err_code": "",
     "creations": [
@@ -10,3 +10,5 @@
     ],
     "id": "812841849562607616",
 }
+
+MOCK_TASK_PENDING = {'task_id': '816069859350695936', 'type': 'character2video', 'state': 'created', 'model': 'vidu1.5', 'style': 'general', 'prompt': 'leo drunk, 2d animation', 'images': ['https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQhXQz0aY3kiT-EBuwgxrjuo3gAg9CY-wLxRw&s,https://d.newsweek.com/en/full/2405766/leonardo-dicaprio.jpg?w=1600&h=1200&q=88&f=316e057141ee539c45396c1a53664eb7,https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSGxfRyoerd3xNizzvOXNVlWsSVXbBW-Xp9jw&s'], 'duration': 4, 'seed': 1430777683, 'aspect_ratio': '16:9', 'resolution': '360p', 'movement_amplitude': 'auto', 'created_at': '2025-05-03T02:02:11.440323061Z'}

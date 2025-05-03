@@ -1,7 +1,9 @@
 import requests
+from mockdata import MOCK_TASK_SUCCESS, MOCK_TASK_PENDING
 
 
 def reference_to_video(
+    mock,
     api_key,
     model,
     images,
@@ -17,6 +19,7 @@ def reference_to_video(
     Make a POST request to the Vidu API to generate a video from a reference.
 
     Args:
+        mock (bool): If True, use mock data instead of making an actual API call.
         api_key (str): Your API key for authorization.
         model (str): The model name. Accepted values: "vidu2.0", "vidu1.5", "vidu1.0".
         images (list): List of image URLs or Base64-encoded strings.
@@ -31,7 +34,10 @@ def reference_to_video(
     Returns:
         dict: The response from the API.
     """
-    print(f"Calling reference_to_video with: {api_key}")
+
+    if mock:
+        return MOCK_TASK_PENDING
+
     url = "https://api.vidu.com/ent/v2/reference2video"
     headers = {"Authorization": f"Token {api_key}", "Content-Type": "application/json"}
     payload = {
@@ -50,22 +56,24 @@ def reference_to_video(
     payload = {key: value for key, value in payload.items() if value is not None}
 
     response = requests.post(url, headers=headers, json=payload)
-    response.raise_for_status()  # Raise an exception for HTTP errors
+    print(response)
     return response.json()
 
 
-def get_generation_status(api_key, task_id):
+def get_generation_status(mock, api_key, task_id):
     """
     Get the status and results of a video generation task from the Vidu API.
 
     Args:
+        mock (bool): If True, use mock data instead of making an actual API call.
         api_key (str): Your API key for authorization.
         task_id (str): The task ID returned upon the successful creation of a task.
 
     Returns:
         dict: The response from the API containing the task status and generated results.
     """
-    print(f"Calling get_generation_status with: {api_key}")
+    if mock:
+        return MOCK_TASK_SUCCESS
     url = f"https://api.vidu.com/ent/v2/tasks/{task_id}/creations"
     headers = {"Authorization": f"Token {api_key}", "Content-Type": "application/json"}
 
