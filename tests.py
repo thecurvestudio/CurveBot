@@ -101,15 +101,16 @@ def test_db_get_usage():
 
 def test_db_add_and_get_memory():
     user_id = 9
+    group_id = 10
     video_url = "http://example.com/video.mp4"
     task_id = "task_001"
     status = "pending"
 
     # Add memory entry
-    db_add_memory(user_id, video_url, task_id, status)
+    db_add_memory(user_id, group_id, video_url, task_id, status)
 
     # Retrieve memory entries
-    memory = db_get_memory(user_id)
+    memory = db_get_memory(user_id, group_id)
 
     # Assertions
     assert len(memory) == 1
@@ -118,15 +119,15 @@ def test_db_add_and_get_memory():
 
     # Update video URL
     new_video_url = "http://example.com/new_video.mp4"
-    db_update_video_url(user_id, task_id, new_video_url)
+    db_update_video_url(user_id, group_id, task_id, new_video_url)
 
     # Retrieve updated memory
-    memory = db_get_memory(user_id)
+    memory = db_get_memory(user_id, group_id)
     assert memory[0][0] == new_video_url  # Check updated video URL
 
     # Update status
     new_status = "completed"
-    db_update_status(user_id, task_id, new_status)
+    db_update_status(user_id, group_id, task_id, new_status)
 
     # Verify status update (requires a separate query if needed)
     conn = sqlite3.connect(get_db_path())
@@ -190,12 +191,16 @@ async def test_imagine_successful_generation():
             resolution="360p",
         )
         mock_add_memory.assert_called_once_with(
-            user_id=67890, video_url="", task_id="task_001", status="pending"
+            user_id=67890,
+            group_id=12345,
+            video_url="",
+            task_id="task_001",
+            status="pending",
         )
         mock_get_generation_status.assert_called()
         mock_update_usage.assert_called_once_with(12345, 67890)
         mock_update_video_url.assert_called_once_with(
-            67890, "task_001", "http://example.com/video.mp4"
+            67890, 12345, "task_001", "http://example.com/video.mp4"
         )
         mock_update.message.reply_video.assert_called_once_with(
             video="http://example.com/video.mp4"
@@ -271,4 +276,60 @@ async def test_imagine_user_limit_reached():
         # Check the message sent to the user
         mock_update.message.reply_text.assert_called_once_with(
             "You have reached your monthly limit."
+        )
+
+
+@pytest.mark.asyncio
+async def test_imagine_missing_task_id():
+    # Mock the update and context
+    mock_update = AsyncMock()
+    mock_context = AsyncMock()
+    mock_update.effective_chat.id = 12345
+    mock_update.effective_user.id = 67890
+    mock_context.args = ["test", "prompt"]
+
+    # Mock database and API calls
+    with patch("bot.API_KEY", "abc"), patch(
+        "bot.db_get_limits", return_value=(10, 5)
+    ) as mock_get_limits, patch(
+        "bot.db_get_usage", return_value=(2, 1)
+    ) as mock_get_usage, patch(
+        "bot.db_get_reference", return_value="http://example.com/image.jpg"
+    ) as mock_get_reference, patch(
+        "bot.reference_to_video",
+        return_value={"task_id": "", "state": "created"},
+    ) as mock_reference_to_video, patch(
+        "bot.get_generation_status",
+        side_effect=[
+            {"state": "success", "creations": [{"url": "http://example.com/video.mp4"}]}
+        ],
+    ) as mock_get_generation_status, patch(
+        "bot.db_add_memory"
+    ) as mock_add_memory, patch(
+        "bot.db_update_usage"
+    ) as mock_update_usage, patch(
+        "bot.db_update_video_url"
+    ) as mock_update_video_url:
+
+        # Call the imagine function
+        await imagine(mock_update, mock_context)
+
+        # Assertions
+        mock_get_limits.assert_called_once_with(12345)
+        mock_get_usage.assert_called_once_with(12345, 67890)
+        mock_get_reference.assert_called_once_with(12345)
+        mock_reference_to_video.assert_called_once_with(
+            mock=False,
+            api_key="abc",
+            model="vidu1.5",
+            images=["http://example.com/image.jpg"],
+            prompt="test prompt, 2d animation",
+            duration=4,
+            aspect_ratio="16:9",
+            resolution="360p",
+        )
+
+        mock_add_memory.assert_not_called()
+        mock_update.message.reply_text.assert_called_once_with(
+            "Failed to create video generation task."
         )

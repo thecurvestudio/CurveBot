@@ -238,7 +238,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Call the reference_to_video function to start the task
     user_prompt = " ".join(context.args)
-    print(f"Ref is: {ref}")
+
     try:
         response = reference_to_video(
             mock=USE_MOCK_DATA,
@@ -263,7 +263,13 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if status == "created":
-        db_add_memory(user_id=user_id, video_url="", task_id=task_id, status="pending")
+        db_add_memory(
+            user_id=user_id,
+            group_id=group_id,
+            video_url="",
+            task_id=task_id,
+            status="pending",
+        )
         await update.message.reply_text("Generating video...")
 
     # Poll the API for the task status
@@ -279,7 +285,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 video_url = creations[0].get("url")
                 await update.message.reply_video(video=video_url)
                 db_update_usage(group_id, user_id)
-                db_update_video_url(user_id, task_id, video_url)
+                db_update_video_url(user_id, group_id, task_id, video_url)
             else:
                 await update.message.reply_text("No video URL found in the response.")
             return
@@ -309,7 +315,7 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Fetch specific memory by ID
-        memory = db_get_memory_by_id()
+        memory = db_get_memory_by_id(user_id, group_id, memory_id)
 
         if not memory:
             await update.message.reply_text(f"No memory found with ID {memory_id}.")
@@ -332,7 +338,7 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         video_url = creations[0].get("url")
                         db_update_usage(group_id, user_id)
                         db_update_video_url(
-                            user_id, task_id, video_url, status="success"
+                            user_id, group_id, task_id, video_url, status="success"
                         )
                         await update.message.reply_video(video=video_url)
                     else:
@@ -357,12 +363,14 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Fetch the last 5 memories if no ID is provided
-    history = db_get_memory(user_id)
+    history = db_get_memory(user_id, group_id)
     if not history:
         await update.message.reply_text("No past videos found.")
         return
 
     for url, ts in history:
+        # TODO Return as single message?
+        # TODO Add command to paginate memory
         await update.message.reply_text(f"Generated at {ts} UTC:\n{url}")
 
 

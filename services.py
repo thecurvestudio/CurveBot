@@ -39,6 +39,7 @@ def init_db():
     c.execute(
         """CREATE TABLE IF NOT EXISTS memory (
         user_id INTEGER,
+        group_id INTEGER,
         video_url TEXT,
         timestamp TEXT,
         task_id TEXT,
@@ -207,12 +208,13 @@ def db_get_usage(group_id, user_id):
     return row if row else (0, 0)
 
 
-def db_add_memory(user_id, video_url, task_id, status="pending"):
+def db_add_memory(user_id, group_id, video_url, task_id, status="pending"):
     """
     Add a video URL to the memory table for a specific user.
 
     Args:
         user_id (int): The ID of the user.
+        group_id (int): The ID of the group.
         video_url (str): The URL of the video to add.
         task_id (str): The task ID associated with the video.
         status (str): The status of the task (default is "pending").
@@ -220,57 +222,60 @@ def db_add_memory(user_id, video_url, task_id, status="pending"):
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "INSERT INTO memory (user_id, video_url, timestamp, task_id, status) VALUES (?, ?, ?, ?, ?)",
-        (user_id, video_url, datetime.now(timezone.utc), task_id, status),
+        "INSERT INTO memory (user_id, group_id, video_url, timestamp, task_id, status) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, group_id, video_url, datetime.now(timezone.utc), task_id, status),
     )
     conn.commit()
     conn.close()
 
 
-def db_update_video_url(user_id, task_id, video_url, status="success"):
+def db_update_video_url(user_id, group_id, task_id, video_url, status="success"):
     """
     Update the video URL in the memory table for a specific user and task.
 
     Args:
         user_id (int): The ID of the user.
+        group_id (int): The ID of the group.
         task_id (str): The task ID associated with the video.
         video_url (str): The new video URL to update.
     """
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "UPDATE memory SET video_url = ?, status = ? WHERE user_id = ? AND task_id = ?",
-        (video_url, status, user_id, task_id),
+        "UPDATE memory SET video_url = ?, status = ? WHERE user_id = ? AND group_id = ? AND task_id = ?",
+        (video_url, status, user_id, group_id, task_id),
     )
     conn.commit()
     conn.close()
 
 
-def db_update_status(user_id, task_id, status):
+def db_update_status(user_id, group_id, task_id, status):
     """
     Update the status in the memory table for a specific user and task.
 
     Args:
         user_id (int): The ID of the user.
+        group_id (int): The ID of the group.
         task_id (str): The task ID associated with the video.
         status (str): The new status to update.
     """
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "UPDATE memory SET status = ? WHERE user_id = ? AND task_id = ?",
-        (status, user_id, task_id),
+        "UPDATE memory SET status = ? WHERE user_id = ? AND group_id = ? AND task_id = ?",
+        (status, user_id, group_id, task_id),
     )
     conn.commit()
     conn.close()
 
 
-def db_get_memory(user_id):
+def db_get_memory(user_id, group_id):
     """
     Retrieve the last 5 video URLs from the memory table for a specific user.
 
     Args:
         user_id (int): The ID of the user.
+        group_id (int): The ID of the group.
 
     Returns:
         list: A list of tuples containing video URLs and timestamps.
@@ -278,20 +283,23 @@ def db_get_memory(user_id):
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "SELECT video_url, timestamp FROM memory WHERE user_id = ? ORDER BY timestamp DESC LIMIT 5",
-        (user_id,),
+        "SELECT video_url, timestamp FROM memory WHERE user_id = ? AND group_id = ? ORDER BY timestamp DESC LIMIT 5",
+        (
+            user_id,
+            group_id,
+        ),
     )
     rows = c.fetchall()
     conn.close()
     return rows
 
 
-def db_get_memory_by_id(user_id, memory_id):
+def db_get_memory_by_id(user_id, group_id, memory_id):
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "SELECT video_url, timestamp, task_id, status FROM memory WHERE user_id = ? AND rowid = ?",
-        (user_id, memory_id),
+        "SELECT video_url, timestamp, task_id, status FROM memory WHERE user_id = ? AND groupd_id = ? AND rowid = ?",
+        (user_id, group_id, memory_id),
     )
     memory = c.fetchone()
     conn.close()
