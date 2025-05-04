@@ -20,7 +20,7 @@ from services import (
     db_update_status,
     get_db_path,
 )
-from bot import imagine
+from bot import imagine, memory
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +114,8 @@ def test_db_add_and_get_memory():
 
     # Assertions
     assert len(memory) == 1
-    assert memory[0][0] == video_url  # Check video URL
-    assert isinstance(memory[0][1], str)  # Check timestamp is a string
+    assert memory[0][1] == video_url  # Check video URL
+    assert isinstance(memory[0][2], str)  # Check timestamp is a string
 
     # Update video URL
     new_video_url = "http://example.com/new_video.mp4"
@@ -123,7 +123,7 @@ def test_db_add_and_get_memory():
 
     # Retrieve updated memory
     memory = db_get_memory(user_id, group_id)
-    assert memory[0][0] == new_video_url  # Check updated video URL
+    assert memory[0][1] == new_video_url  # Check updated video URL
 
     # Update status
     new_status = "completed"
@@ -333,3 +333,104 @@ async def test_imagine_missing_task_id():
         mock_update.message.reply_text.assert_called_once_with(
             "Failed to create video generation task."
         )
+
+
+@pytest.mark.asyncio
+async def test_memory_with_id_pending_status():
+    # Mock the update and context
+    mock_update = AsyncMock()
+    mock_context = AsyncMock()
+    mock_update.effective_chat.id = 12345
+    mock_update.effective_user.id = 67890
+    mock_context.args = ["1"]  # Simulate passing an ID
+
+    # Mock database and API calls
+    with patch("bot.API_KEY", "abc"), patch(
+        "bot.db_get_limits", return_value=(10, 5)
+    ), patch(
+        "bot.db_get_memory_by_id",
+        return_value=(
+            "http://example.com/video.mp4",
+            "2025-05-04T10:00:00",
+            "task_001",
+            "pending",
+        ),
+    ) as mock_get_memory_by_id, patch(
+        "bot.get_generation_status",
+        side_effect=[
+            {
+                "state": "success",
+                "creations": [{"url": "http://example.com/generated_video.mp4"}],
+            }
+        ],
+    ) as mock_get_generation_status, patch(
+        "bot.db_update_usage"
+    ) as mock_update_usage, patch(
+        "bot.db_update_video_url"
+    ) as mock_update_video_url:
+
+        # Call the memory function
+        await memory(mock_update, mock_context)
+
+        # Assertions
+        mock_get_memory_by_id.assert_called_once_with(67890, 12345, 1)
+        mock_get_generation_status.assert_called_once_with(
+            mock=False, api_key="abc", task_id="task_001"
+        )
+        mock_update_usage.assert_called_once_with(12345, 67890)
+        mock_update_video_url.assert_called_once_with(
+            67890,
+            12345,
+            "task_001",
+            "http://example.com/generated_video.mp4",
+            status="success",
+        )
+        mock_update.message.reply_video.assert_called_once_with(
+            video="http://example.com/generated_video.mp4"
+        )
+
+
+@pytest.mark.asyncio
+async def test_memory_with_no_id():
+    # Mock the update and context
+    mock_update = AsyncMock()
+    mock_context = AsyncMock()
+    mock_update.effective_chat.id = 12345
+    mock_update.effective_user.id = 67890
+    mock_context.args = []  # No ID provided
+
+    # Mock database call
+    history = [
+        (1, "http://example.com/video1.mp4", "2025-05-04T10:00:00"),
+        (2, "http://example.com/video2.mp4", "2025-05-05T11:00:00"),
+    ]
+    with patch("bot.db_get_memory", return_value=history) as mock_get_memory:
+        # Call the memory function
+        await memory(mock_update, mock_context)
+
+        # Assertions
+        mock_get_memory.assert_called_once_with(67890, 12345)
+        mock_update.message.reply_text.assert_called_once_with(
+            "Here are your last 2 generated videos:\n\n"
+            "ID: 1 - Generated at 2025-05-04\n"
+            "ID: 2 - Generated at 2025-05-05\n\n"
+            "Use /memory <id> to view a specific video."
+        )
+
+
+@pytest.mark.asyncio
+async def test_memory_with_invalid_id():
+    # Mock the update and context
+    mock_update = AsyncMock()
+    mock_context = AsyncMock()
+    mock_update.effective_chat.id = 12345
+    mock_update.effective_user.id = 67890
+    mock_context.args = ["invalid"]  # Invalid ID
+
+    # Call the memory function
+    await memory(mock_update, mock_context)
+
+    # Assertions
+    mock_update.message.reply_text.assert_called_once_with(
+        "Invalid ID. Please provide a valid numeric ID."
+    )

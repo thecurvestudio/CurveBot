@@ -53,19 +53,27 @@ ASPECT_RATIO = "16:9"
 RESOLUTION = "360p"
 DURATION = 4
 ENDING_PROMPT = "2d animation"
-POLL_SLEEP_CYCLE = 5  # seconds
-MAX_POLLING_TIME = 60  # seconds
+POLL_SLEEP_CYCLE_SECONDS = 5  # seconds
+MAX_POLLING_TIME_SECONDS = 60  # seconds
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    commands = """
-Available commands:
+    bot_username = context.bot.username  # Get the bot's username dynamically
+    commands = f"""
+*Available user commands:*
 /start - Show this help message
-/reference <value> - Set a reference for the group
-/imagine - Generate a video based on the group's reference
-/memory - Show your last 5 generated videos
+/imagine <prompt> - Generate a video based on the group's reference
+/memory <id:optional> - Show your last 5 generated videos or a specific video by ID
+
+*Available admin commands:*
+/reference <value> or <file.txt> - Set a reference for the group
+File has to be a .txt file with a list of URLs, one URL per line
+/sgl <value> - Set a monthly limit for the group
+/sul <value> - Set a monthly limit for all users in the group
+
+*Note:* Use commands like `/start@{bot_username}` in group chats to explicitly target this bot.
 """
-    await update.message.reply_text(commands)
+    await update.message.reply_text(commands, parse_mode="Markdown")
 
 
 async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -273,7 +281,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Generating video...")
 
     # Poll the API for the task status
-    for _ in range(MAX_POLLING_TIME // POLL_SLEEP_CYCLE):
+    for _ in range(MAX_POLLING_TIME_SECONDS // POLL_SLEEP_CYCLE_SECONDS):
         status_response = get_generation_status(
             mock=USE_MOCK_DATA, api_key=API_KEY, task_id=task_id
         )
@@ -293,7 +301,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Video generation failed.")
             return
 
-        await asyncio.sleep(POLL_SLEEP_CYCLE)
+        await asyncio.sleep(POLL_SLEEP_CYCLE_SECONDS)
 
     await update.message.reply_text(
         "Video generation is taking too long. Use /memory <id> to check the status."
@@ -326,7 +334,7 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Poll the API for the task status
         if status == "pending":
             await update.message.reply_text("Video is still being generated.")
-            for _ in range(MAX_POLLING_TIME // POLL_SLEEP_CYCLE):
+            for _ in range(MAX_POLLING_TIME_SECONDS // POLL_SLEEP_CYCLE_SECONDS):
                 status_response = get_generation_status(
                     mock=USE_MOCK_DATA, api_key=API_KEY, task_id=task_id
                 )
@@ -350,7 +358,7 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("Video generation failed.")
                     return
 
-                await asyncio.sleep(POLL_SLEEP_CYCLE)
+                await asyncio.sleep(POLL_SLEEP_CYCLE_SECONDS)
             await update.message.reply_text(
                 "Video generation is taking too long. Use /memory <id> to check the status."
             )
@@ -368,10 +376,13 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No past videos found.")
         return
 
-    for url, ts in history:
-        # TODO Return as single message?
-        # TODO Add command to paginate memory
-        await update.message.reply_text(f"Generated at {ts} UTC:\n{url}")
+    # Combine all rows into a single message
+    message = f"Here are your last {len(history)} generated videos:\n\n"
+    for video_id, url, ts in history:
+        formatted_ts = datetime.fromisoformat(ts).strftime("%Y-%m-%d")
+        message += f"ID: {video_id} - Generated at {formatted_ts}\n"
+    message += "\nUse /memory <id> to view a specific video."
+    await update.message.reply_text(message)
 
 
 if __name__ == "__main__":

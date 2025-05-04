@@ -43,7 +43,8 @@ def init_db():
         video_url TEXT,
         timestamp TEXT,
         task_id TEXT,
-        status TEXT
+        status TEXT,
+        user_video_id INTEGER
     )"""
     )
     conn.commit()
@@ -221,9 +222,26 @@ def db_add_memory(user_id, group_id, video_url, task_id, status="pending"):
     """
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
+
+    # Calculate the next user_video_id
     c.execute(
-        "INSERT INTO memory (user_id, group_id, video_url, timestamp, task_id, status) VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, group_id, video_url, datetime.now(timezone.utc), task_id, status),
+        "SELECT COALESCE(MAX(user_video_id), 0) + 1 FROM memory WHERE user_id = ? AND group_id = ?",
+        (user_id, group_id),
+    )
+    next_user_video_id = c.fetchone()[0]
+
+    # Insert the new record
+    c.execute(
+        "INSERT INTO memory (user_id, group_id, video_url, timestamp, task_id, status, user_video_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            user_id,
+            group_id,
+            video_url,
+            datetime.now(timezone.utc),
+            task_id,
+            status,
+            next_user_video_id,
+        ),
     )
     conn.commit()
     conn.close()
@@ -283,7 +301,7 @@ def db_get_memory(user_id, group_id):
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "SELECT video_url, timestamp FROM memory WHERE user_id = ? AND group_id = ? ORDER BY timestamp DESC LIMIT 5",
+        "SELECT user_video_id, video_url, timestamp FROM memory WHERE user_id = ? AND group_id = ? ORDER BY timestamp DESC LIMIT 5",
         (
             user_id,
             group_id,
@@ -294,12 +312,23 @@ def db_get_memory(user_id, group_id):
     return rows
 
 
-def db_get_memory_by_id(user_id, group_id, memory_id):
+def db_get_memory_by_id(user_id, group_id, user_video_id):
+    """
+    Retrieve a specific video from the memory table by its user_video_id.
+
+    Args:
+        user_id (int): The ID of the user.
+        group_id (int): The ID of the group.
+        user_video_id (int): The user-specific video ID.
+
+    Returns:
+        tuple: A tuple containing video URL, timestamp, task ID, and status.
+    """
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
-        "SELECT video_url, timestamp, task_id, status FROM memory WHERE user_id = ? AND groupd_id = ? AND rowid = ?",
-        (user_id, group_id, memory_id),
+        "SELECT video_url, timestamp, task_id, status FROM memory WHERE user_id = ? AND group_id = ? AND user_video_id = ?",
+        (user_id, group_id, user_video_id),
     )
     memory = c.fetchone()
     conn.close()
