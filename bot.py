@@ -9,6 +9,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    ChatMemberHandler,
     filters,
 )
 import requests
@@ -32,6 +33,8 @@ from services import (
     db_set_user_limit,
     db_get_memory_by_id,
     db_update_video_url,
+    db_add_group,
+    db_get_all_groups,
 )
 
 from vidu import reference_to_video, get_generation_status
@@ -70,6 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 File has to be a .txt file with a list of URLs, one URL per line
 /sgl <value> - Set a monthly limit for the group
 /sul <value> - Set a monthly limit for all users in the group
+/groups - Show all groups where the bot is added
 
 *Note:* Use commands like `/start@{bot_username}` in group chats to explicitly target this bot.
 """
@@ -91,7 +95,7 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
         - Sends a confirmation message with the reference.
 
     Usage:
-        /reference <value>
+        /reference [group_id] <url1> <url2> ...
     """
 
     if update.effective_user.id != ADMIN_ID:
@@ -99,29 +103,66 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if len(context.args) < 1:
-        await update.message.reply_text("Usage: /reference <value>")
+        await update.message.reply_text(
+            "Usage: /reference [group_id] <url1> <url2> ..."
+        )
         return
-    group_id = update.effective_chat.id
-    ref = " ".join(context.args)
 
+    # Check if the first argument is a group ID
+    try:
+        group_id = int(context.args[0])
+        urls = context.args[1:]  # Remaining arguments are URLs
+    except ValueError:
+        group_id = update.effective_chat.id  # Use the current group's ID
+        urls = context.args  # All arguments are URLs
+
+    if not urls:
+        await update.message.reply_text("Please provide at least one URL.")
+        return
+
+    # Validate and join URLs
+    ref = " ".join(urls)
+    print(f"Group ID: {group_id}, Reference: {ref}")
     db_add_reference(group_id, ref)
 
-    await update.message.reply_text(f"Reference for this group set to:\n{ref}")
+    await update.message.reply_text(f"Reference for group {group_id} set to:\n{ref}")
 
 
 async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("You don't have permission to upload files.")
         return
 
     if update.message.document and update.message.document.mime_type == "text/plain":
+        print("Received a .txt file")
         document = update.message.document
         caption = update.message.caption
-        if caption and caption.strip().lower() == "/reference":
+        print(caption)
+        cap_split = caption.split(" ", 1) if caption else []
+
+        group_id = update.effective_chat.id
+
+        if len(cap_split) == 2:
+            command = cap_split[0].strip().lower()
+            group_id = cap_split[1].strip()
+
+            try:
+                group_id = int(group_id)
+            except ValueError:
+                await update.message.reply_text(
+                    "Invalid group ID. Please provide a valid numeric group ID."
+                )
+                return
+        else:
+            command = caption.strip().lower() if caption else ""
+        print(f"cap_split: {cap_split}")
+
+        if caption and command == "/reference":
             file = await context.bot.get_file(document.file_id)
             folder_path = "references"
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
-            file_path = f"{folder_path}/{update.effective_chat.id}_{document.file_name}"
+            file_path = f"{folder_path}/{group_id}_{document.file_name}"
 
             # Download the file
             await file.download_to_drive(file_path)
@@ -135,7 +176,7 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 return
 
             # Save the URLs as a reference
-            db_add_reference(update.effective_chat.id, ",".join(urls))
+            db_add_reference(group_id, ",".join(urls))
             await update.message.reply_text(
                 f"Reference set from uploaded file:\n{', '.join(urls)}"
             )
@@ -385,7 +426,57 @@ async def memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 
+async def get_tracked_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Display all groups where the bot is added.
+
+    Args:
+        update (Update): The incoming update from the Telegram bot.
+        context (ContextTypes.DEFAULT_TYPE): The context for the command.
+    """
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(
+            "You don't have permission to view this information."
+        )
+        return
+
+    groups = db_get_all_groups()
+    if not groups:
+        await update.message.reply_text("No groups found.")
+        return
+
+    message = "Here are the groups where the bot is added:\n\n"
+    for group_id, group_name in groups:
+        message += f"Name: {group_name}\nID: {group_id}\n\n"
+
+    await update.message.reply_text(message)
+
+
+async def bot_added_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handle the event when the bot is added to a group.
+
+    Args:
+        update (Update): The incoming update from the Telegram bot.
+        context (ContextTypes.DEFAULT_TYPE): The context for the event.
+    """
+    chat_member = update.my_chat_member
+    if chat_member.new_chat_member.status == "member":  # Bot is added to the group
+        group_id = chat_member.chat.id
+        group_name = chat_member.chat.title
+        print(f"Bot added to group: {group_name} (ID: {group_id})")
+
+        # Track the group in the database
+        if group_name:  # Only track groups, not private chats
+            db_add_group(group_id, group_name)
+            await context.bot.send_message(
+                chat_id=group_id,
+                text=f"Hello! I've been added to {group_name}.",
+            )
+
+
 if __name__ == "__main__":
+    print("Running CurveBot...")
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Run the Telegram bot.")
     parser.add_argument(
@@ -407,6 +498,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("sul", set_user_limit))
     app.add_handler(CommandHandler("imagine", imagine))
     app.add_handler(CommandHandler("memory", memory))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file_upload))
-
+    app.add_handler(CommandHandler("groups", get_tracked_groups))
+    app.add_handler(MessageHandler(filters.Document.TEXT, handle_file_upload))
+    app.add_handler(
+        ChatMemberHandler(bot_added_to_group, ChatMemberHandler.MY_CHAT_MEMBER)
+    )
     app.run_polling()

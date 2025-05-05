@@ -19,6 +19,8 @@ from services import (
     db_update_video_url,
     db_update_status,
     get_db_path,
+    db_add_group,
+    db_get_all_groups,
 )
 from bot import imagine, memory
 
@@ -434,3 +436,85 @@ async def test_memory_with_invalid_id():
     mock_update.message.reply_text.assert_called_once_with(
         "Invalid ID. Please provide a valid numeric ID."
     )
+
+
+def test_db_add_group():
+    # Add a group to the database
+    group_id = 12345
+    group_name = "Test Group"
+    db_add_group(group_id, group_name)
+
+    # Verify the group was added
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+    c.execute("SELECT group_id, group_name FROM groups WHERE group_id = ?", (group_id,))
+    result = c.fetchone()
+    conn.close()
+
+    assert result is not None
+    assert result[0] == group_id
+    assert result[1] == group_name
+
+
+def test_db_add_group_update_name():
+    # Add a group to the database
+    group_id = 12345
+    group_name = "Test Group"
+    db_add_group(group_id, group_name)
+
+    # Update the group name
+    new_group_name = "Updated Test Group"
+    db_add_group(group_id, new_group_name)
+
+    # Verify the group name was updated
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+    c.execute("SELECT group_id, group_name FROM groups WHERE group_id = ?", (group_id,))
+    result = c.fetchone()
+    conn.close()
+
+    assert result is not None
+    assert result[0] == group_id
+    assert result[1] == new_group_name
+
+
+def test_db_get_all_groups():
+    # Add multiple groups to the database
+    groups = [
+        (12345, "Group 1"),
+        (67890, "Group 2"),
+        (11223, "Group 3"),
+    ]
+    for group_id, group_name in groups:
+        db_add_group(group_id, group_name)
+
+    # Retrieve all groups
+    retrieved_groups = db_get_all_groups()
+
+    # Verify the retrieved groups match the added groups
+    assert len(retrieved_groups) == len(groups)
+    for group in groups:
+        assert group in retrieved_groups
+
+
+def test_db_add_duplicate_group():
+    # Add a group to the database
+    group_id = 12345
+    group_name = "Original Group Name"
+    db_add_group(group_id, group_name)
+
+    # Add the same group with a new name
+    updated_group_name = "Updated Group Name"
+    db_add_group(group_id, updated_group_name)
+
+    # Verify that the group name was updated and no duplicate entry exists
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+    c.execute("SELECT group_id, group_name FROM groups WHERE group_id = ?", (group_id,))
+    result = c.fetchall()
+    conn.close()
+
+    # Assertions
+    assert len(result) == 1  # Ensure only one entry exists
+    assert result[0][0] == group_id
+    assert result[0][1] == updated_group_name  # Ensure the name was updated

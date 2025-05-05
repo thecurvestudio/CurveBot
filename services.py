@@ -14,6 +14,12 @@ def init_db():
     conn = sqlite3.connect(get_db_path())
     c = conn.cursor()
     c.execute(
+        """CREATE TABLE IF NOT EXISTS groups (
+        group_id INTEGER PRIMARY KEY,
+        group_name TEXT
+    )"""
+    )
+    c.execute(
         """CREATE TABLE IF NOT EXISTS prompts (
         group_id INTEGER PRIMARY KEY,
         prompt TEXT
@@ -333,3 +339,40 @@ def db_get_memory_by_id(user_id, group_id, user_video_id):
     memory = c.fetchone()
     conn.close()
     return memory
+
+
+def db_add_group(group_id, group_name):
+    """
+    Add a group to the database or update its name if it already exists.
+
+    Args:
+        group_id (int): The ID of the group.
+        group_name (str): The name of the group.
+    """
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO groups (group_id, group_name)
+        VALUES (?, ?)
+        ON CONFLICT(group_id) DO UPDATE SET group_name = excluded.group_name
+        """,
+        (group_id, group_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def db_get_all_groups():
+    """
+    Retrieve all groups from the database.
+
+    Returns:
+        list: A list of tuples containing group IDs and names.
+    """
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+    c.execute("SELECT group_id, group_name FROM groups")
+    groups = c.fetchall()
+    conn.close()
+    return groups
