@@ -2,7 +2,7 @@ import os
 import argparse
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -198,32 +198,40 @@ async def set_group_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     Behavior:
         - Checks if the user has admin permissions.
-        - Validates that a single argument (the group limit) is provided.
+        - Validates that a single argument (the group limit) or two arguments (group ID and limit) are provided.
         - Parses the group limit as an integer.
         - Updates the group limit in the database.
         - Sends a confirmation message with the new group limit.
 
     Usage:
-        /sgl <value>
+        /sgl [group_id] <value>
     """
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text(
             "You don't have permission to set group limits."
         )
         return
-    group_id = update.effective_chat.id
 
-    if len(context.args) != 1:
-        await update.message.reply_text("Usage: /sgl <value>")
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /sgl [group_id] <value>")
         return
 
+    # Check if the first argument is a group ID
     try:
-        group_limit = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Usage: /sgl <value>")
-        return
+        group_id = int(context.args[0])
+        group_limit = int(context.args[1])  # Second argument is the limit
+    except (ValueError, IndexError):
+        group_id = update.effective_chat.id  # Use the current group's ID
+        try:
+            group_limit = int(context.args[0])  # First argument is the limit
+        except ValueError:
+            await update.message.reply_text("Usage: /sgl [group_id] <value>")
+            return
+
     db_set_group_limit(group_id, group_limit)
-    await update.message.reply_text(f"Group limit set to {group_limit} per month")
+    await update.message.reply_text(
+        f"Group limit for group {group_id} set to {group_limit} per month"
+    )
 
 
 async def set_user_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -236,31 +244,37 @@ async def set_user_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     Behavior:
         - Checks if the user has admin permissions.
-        - Validates that a single argument (the user limit) is provided.
+        - Validates that a single argument (the user limit) or two arguments (group ID and limit) are provided.
         - Parses the user limit as an integer.
         - Updates the user limit in the database.
         - Sends a confirmation message with the new user limit.
 
     Usage:
-        /sul <value>
+        /sul [group_id] <value>
     """
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("You don't have permission to set user limits.")
         return
-    group_id = update.effective_chat.id
 
-    if len(context.args) != 1:
-        await update.message.reply_text("Usage: /sul <value>")
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /sul [group_id] <value>")
         return
 
     try:
-        user_limit = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Usage: /sul <value>")
-        return
+        group_id = int(context.args[0])
+        user_limit = int(context.args[1]) 
+    except (ValueError, IndexError):
+        group_id = update.effective_chat.id 
+        try:
+            user_limit = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("Usage: /sul [group_id] <value>")
+            return
 
     db_set_user_limit(group_id, user_limit)
-    await update.message.reply_text(f"User limit set to {user_limit} per month")
+    await update.message.reply_text(
+        f"User limit for group {group_id} set to {user_limit} per month"
+    )
 
 
 async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
