@@ -185,7 +185,7 @@ async def test_imagine_successful_generation():
         mock_reference_to_video.assert_called_once_with(
             mock=False,
             api_key="abc",
-            model="vidu1.5",
+            model="vidu2.0",
             images=["http://example.com/image.jpg"],
             prompt="test prompt, 2d animation",
             duration=4,
@@ -323,7 +323,7 @@ async def test_imagine_missing_task_id():
         mock_reference_to_video.assert_called_once_with(
             mock=False,
             api_key="abc",
-            model="vidu1.5",
+            model="vidu2.0",
             images=["http://example.com/image.jpg"],
             prompt="test prompt, 2d animation",
             duration=4,

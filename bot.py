@@ -45,19 +45,16 @@ logging.basicConfig(
 )
 
 USE_MOCK_DATA = False
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_IDs = [int(id) for id in os.getenv("ADMIN_ID").split(",")]
 API_KEY = os.getenv("VIDO_API_KEY")
 VIDU_API_URL = "https://api.vidu.com/imagine"
-MODEL = "vidu1.5"
-IMAGES = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Leonardo_Dicaprio_Cannes_2019.jpg/250px-Leonardo_Dicaprio_Cannes_2019.jpg"
-]
+MODEL = "vidu2.0"
 ASPECT_RATIO = "16:9"
 RESOLUTION = "360p"
 DURATION = 4
 ENDING_PROMPT = "2d animation"
-POLL_SLEEP_CYCLE_SECONDS = 5  # seconds
-MAX_POLLING_TIME_SECONDS = 60  # seconds
+POLL_SLEEP_CYCLE_SECONDS = 5
+MAX_POLLING_TIME_SECONDS = 60
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,7 +95,7 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
         /reference [group_id] <url1> <url2> ...
     """
 
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDs:
         await update.message.reply_text("You don't have permission to set a reference.")
         return
 
@@ -129,7 +126,7 @@ async def reference(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDs:
         await update.message.reply_text("You don't have permission to upload files.")
         return
 
@@ -206,7 +203,7 @@ async def set_group_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Usage:
         /sgl [group_id] <value>
     """
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDs:
         await update.message.reply_text(
             "You don't have permission to set group limits."
         )
@@ -252,7 +249,7 @@ async def set_user_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Usage:
         /sul [group_id] <value>
     """
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDs:
         await update.message.reply_text("You don't have permission to set user limits.")
         return
 
@@ -448,7 +445,7 @@ async def get_tracked_groups(update: Update, context: ContextTypes.DEFAULT_TYPE)
         update (Update): The incoming update from the Telegram bot.
         context (ContextTypes.DEFAULT_TYPE): The context for the command.
     """
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDs:
         await update.message.reply_text(
             "You don't have permission to view this information."
         )
