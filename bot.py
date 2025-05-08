@@ -259,9 +259,9 @@ async def set_user_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         group_id = int(context.args[0])
-        user_limit = int(context.args[1]) 
+        user_limit = int(context.args[1])
     except (ValueError, IndexError):
-        group_id = update.effective_chat.id 
+        group_id = update.effective_chat.id
         try:
             user_limit = int(context.args[0])
         except ValueError:
@@ -290,7 +290,7 @@ async def imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_limit is not None and user_usage >= user_limit:
         await update.message.reply_text("You have reached your monthly limit.")
         return
-
+    print(f"Group id: {group_id}")
     ref = db_get_reference(group_id)
     if not ref:
         await update.message.reply_text("No reference set for this group.")
